@@ -18,6 +18,7 @@ import com.amap.api.location.AMapLocationListener;
 import android.Manifest;
 import android.annotation.TargetApi;
 import android.content.pm.PackageManager;
+import android.content.Context;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,10 @@ import java.util.List;
  * @author zhaoying
  */
 public class GaoDeLocation extends CordovaPlugin {
+
+	//全局context
+	Context context = null;
+
     //声明AMapLocationClient类对象
     public AMapLocationClient locationClient = null;
     //声明定位参数
@@ -58,6 +63,9 @@ public class GaoDeLocation extends CordovaPlugin {
     * */
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
+		if (!this.context)
+			this.context = this.cordova.getActivity().getApplicationContext();
+
         if (action.equals("getCurrentPosition")) {
             cb = callbackContext;
             PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
@@ -70,14 +78,38 @@ public class GaoDeLocation extends CordovaPlugin {
             }
 
             return true;
-        }
+        }else if (action.equals("isScreenOn")){
+            cb = callbackContext;
+            PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
+            pluginResult.setKeepCallback(true);
+            cb.sendPluginResult(pluginResult);
+			checkIsScreenOn();
+			return true;
+		}
         return false;
     }
 
+	private void checkIsScreenOn(){
+		try{
+			PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+			//true为打开，false为关闭
+			boolean ifOpen = powerManager.isScreenOn();
+			JSONObject json = new JSONObject();
+			json.put("res", ifOpen);
+			PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, json);
+		}catch(Exception e){
+			PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+			pluginResult.setKeepCallback(true);
+			cb.sendPluginResult(pluginResult);
+		}
+		pluginResult.setKeepCallback(true);
+		cb.sendPluginResult(pluginResult);
+	}
 
-    /**
-     * 获取定位
-     *
+
+	/**
+	 * 获取定位
+	 *
      * @author zhaoying
      */
     private void getCurrentPosition() {
@@ -113,7 +145,7 @@ public class GaoDeLocation extends CordovaPlugin {
     private AMapLocationClientOption getDefaultOption() {
         AMapLocationClientOption mOption = new AMapLocationClientOption();
         mOption.setLocationMode(AMapLocationMode.Hight_Accuracy);//可选，设置定位模式，可选的模式有高精度、仅设备、仅网络。默认为高精度模式
-        mOption.setGpsFirst(false);//可选，设置是否gps优先，只在高精度模式下有效。默认关闭
+        mOption.setGpsFirst(true);//可选，设置是否gps优先，只在高精度模式下有效。默认关闭
         mOption.setHttpTimeOut(30000);//可选，设置网络请求超时时间。默认为30秒。在仅设备模式下无效
         mOption.setInterval(2000);//可选，设置定位间隔。默认为2秒
         mOption.setNeedAddress(false);//可选，设置是否返回逆地理地址信息。默认是true
@@ -138,7 +170,7 @@ public class GaoDeLocation extends CordovaPlugin {
                     //解析定位结果
                     //errCode等于0代表定位成功，其他的为定位失败，具体的可以参照官网定位错误码说明
                     if (location.getErrorCode() == 0) {
-                        json.put("status", "定位成功");
+                        json.put("status", "ok");
                         //定位类型
                         json.put("type", location.getLocationType());
                         //纬度
@@ -171,7 +203,7 @@ public class GaoDeLocation extends CordovaPlugin {
                         //兴趣点
                         json.put("time", location.getTime());
                     } else {
-                        json.put("status", "定位失败");
+                        json.put("status", "fail");
                         json.put("errcode", location.getErrorCode());
                         json.put("errinfo", location.getErrorInfo());
                         json.put("detail", location.getLocationDetail());
