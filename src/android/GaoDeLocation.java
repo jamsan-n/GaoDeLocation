@@ -53,6 +53,10 @@ public class GaoDeLocation extends CordovaPlugin {
 
     private static final int PERMISSON_REQUEST_CODE = 0;
 
+	// 定位模式
+	private boolean onceLocationMode = false;
+	private JSONObject config = null;
+
     /**
      * JS回调接口对象
      */
@@ -63,10 +67,12 @@ public class GaoDeLocation extends CordovaPlugin {
     * */
     @Override
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
-		if (!this.context)
+		if (null == this.context)
 			this.context = this.cordova.getActivity().getApplicationContext();
 
+		// 单次定位
         if (action.equals("getCurrentPosition")) {
+			onceLocationMode = true;
             cb = callbackContext;
             PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
             pluginResult.setKeepCallback(true);
@@ -74,37 +80,44 @@ public class GaoDeLocation extends CordovaPlugin {
             if(this.isNeedCheckPermissions(needPermissions)){
                 this.checkPermissions(needPermissions);
             }else{
-                this.getCurrentPosition();
+                this.startPosition();
             }
-
             return true;
-        }else if (action.equals("isScreenOn")){
+        }
+
+		// 连续定位
+		if (action.equals("startWatchPosition")){
+			onceLocationMode = false;
             cb = callbackContext;
             PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
             pluginResult.setKeepCallback(true);
             cb.sendPluginResult(pluginResult);
-			checkIsScreenOn();
+            if(this.isNeedCheckPermissions(needPermissions)){
+                this.checkPermissions(needPermissions);
+            }else{
+                this.startPosition();
+            }
+            return true;
+		} 
+
+		if (action.equals("stopWatchPosition")){
+			if (locationClient != null && locationClient.isStarted())
+				locationClient.stopLocation();
+            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
+            pluginResult.setKeepCallback(false);
+            callbackContext.sendPluginResult(pluginResult);
+			return true;
+		}
+
+		if (action.equals("config")){
+			this.config = args.getJSONObject(0);
+            PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
+            pluginResult.setKeepCallback(false);
+            callbackContext.sendPluginResult(pluginResult);
 			return true;
 		}
         return false;
     }
-
-	private void checkIsScreenOn(){
-		try{
-			PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-			//true为打开，false为关闭
-			boolean ifOpen = powerManager.isScreenOn();
-			JSONObject json = new JSONObject();
-			json.put("res", ifOpen);
-			PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, json);
-		}catch(Exception e){
-			PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
-			pluginResult.setKeepCallback(true);
-			cb.sendPluginResult(pluginResult);
-		}
-		pluginResult.setKeepCallback(true);
-		cb.sendPluginResult(pluginResult);
-	}
 
 
 	/**
@@ -112,29 +125,19 @@ public class GaoDeLocation extends CordovaPlugin {
 	 *
      * @author zhaoying
      */
-    private void getCurrentPosition() {
-        if (locationClient == null) {
-            this.initLocation();
-        }else{
-			locationClient.setLocationOption(getDefaultOption());
-		}
-        this.startLocation();
-    }
-
-
-    /**
-     * 初始化定位
-     *
-     * @author zhaoying
-     */
-    private void initLocation() {
+    private void startPosition() {
         //初始化client
-        locationClient = new AMapLocationClient(this.webView.getContext());
-        //设置定位参数
-        locationClient.setLocationOption(getDefaultOption());
+		if (locationClient == null) 
+			locationClient = new AMapLocationClient(this.webView.getContext());
+
+		// 配置参数
+		locationClient.setLocationOption(getDefaultOption());
+
         // 设置定位监听
         locationClient.setLocationListener(locationListener);
 
+		// 开始定位
+        locationClient.startLocation();
     }
 
     /**
@@ -147,14 +150,33 @@ public class GaoDeLocation extends CordovaPlugin {
         mOption.setLocationMode(AMapLocationMode.Hight_Accuracy);//可选，设置定位模式，可选的模式有高精度、仅设备、仅网络。默认为高精度模式
         mOption.setGpsFirst(true);//可选，设置是否gps优先，只在高精度模式下有效。默认关闭
         mOption.setHttpTimeOut(30000);//可选，设置网络请求超时时间。默认为30秒。在仅设备模式下无效
-        mOption.setInterval(2000);//可选，设置定位间隔。默认为2秒
-        mOption.setNeedAddress(false);//可选，设置是否返回逆地理地址信息。默认是true
-        mOption.setOnceLocation(false);//可选，设置是否单次定位。默认是false
+        mOption.setOnceLocation(onceLocationMode);//可选，设置是否单次定位。默认是false
         mOption.setOnceLocationLatest(false);//可选，设置是否等待wifi刷新，默认为false.如果设置为true,会自动变为单次定位，持续定位时不要使用
         AMapLocationClientOption.setLocationProtocol(AMapLocationProtocol.HTTP);//可选， 设置网络请求的协议。可选HTTP或者HTTPS。默认为HTTP
-        mOption.setSensorEnable(true);//可选，设置是否使用传感器。默认是false
-        mOption.setWifiScan(true); //可选，设置是否开启wifi扫描。默认为true，如果设置为false会同时停止主动刷新，停止以后完全依赖于系统刷新，定位位置可能存在误差
-        mOption.setLocationCacheEnable(true); //可选，设置是否使用缓存定位，默认为true
+        mOption.setWifiScan(false); //可选，设置是否开启wifi扫描。默认为true，如果设置为false会同时停止主动刷新，停止以后完全依赖于系统刷新，定位位置可能存在误差
+
+		try{
+		if (config.has("interval"))
+			mOption.setInterval(config.getInt("interval"));//可选，设置定位间隔。默认为2秒
+		else
+			mOption.setInterval(2000);//可选，设置定位间隔。默认为2秒
+
+		if (config.has("needAddress"))
+			mOption.setNeedAddress(config.getBoolean("needAddress"));
+		else
+			mOption.setNeedAddress(false);//可选，设置是否返回逆地理地址信息。默认是true
+
+		if (config.has("sensorEnable"))
+			mOption.setSensorEnable(config.getBoolean("sensorEnable"));
+		else
+			mOption.setSensorEnable(true);//可选，设置是否使用传感器。默认是false
+
+		if (config.has("cacheEnable"))
+			mOption.setSensorEnable(config.getBoolean("cacheEnable"));
+		else
+			mOption.setLocationCacheEnable(false); //可选，设置是否使用缓存定位，默认为true
+		} catch (JSONException e) {
+		}
         return mOption;
     }
 
@@ -211,40 +233,24 @@ public class GaoDeLocation extends CordovaPlugin {
                     //定位之后的回调时间
                     json.put("backtime", System.currentTimeMillis());
                 } else {
-
+					json.put("status", "fail");
+					json.put("errcode", "8288");
+					json.put("detail", "location is null");
                 }
                 PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, json);
-                pluginResult.setKeepCallback(true);
+                pluginResult.setKeepCallback(!onceLocationMode);
                 cb.sendPluginResult(pluginResult);
             } catch (JSONException e) {
                 PluginResult pluginResult = new PluginResult(PluginResult.Status.ERROR, e.getMessage());
                 pluginResult.setKeepCallback(true);
                 cb.sendPluginResult(pluginResult);
             } finally {
-                locationClient.stopLocation();
+				if (onceLocationMode)
+					locationClient.stopLocation();
             }
         }
     };
 
-    /**
-     * 开始定位
-     *
-     * @author zhaoying
-     */
-    private void startLocation() {
-        // 启动定位
-        locationClient.startLocation();
-    }
-
-    /**
-     * 停止定位
-     *
-     * @author zhaoying
-     */
-    private void stopLocation() {
-        // 停止定位
-        locationClient.stopLocation();
-    }
 
     /**
      * 销毁定位
@@ -324,7 +330,7 @@ public class GaoDeLocation extends CordovaPlugin {
     public void onRequestPermissionResult(int requestCode,
                                            String[] permissions, int[] paramArrayOfInt) {
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            this.getCurrentPosition();
+            this.startPosition();
         }
     }
 }
