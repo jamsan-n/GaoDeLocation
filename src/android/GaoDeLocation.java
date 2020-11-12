@@ -199,6 +199,10 @@ public class GaoDeLocation extends CordovaPlugin {
                         json.put("latitude", location.getLatitude());
                         //经度
                         json.put("longitude", location.getLongitude());
+                        //海拔
+                        json.put("altitude", location.getAltitude());
+                        //速度
+                        json.put("speed", location.getSpeed());
                         //精度
                         json.put("accuracy", location.getAccuracy());
                         //角度
